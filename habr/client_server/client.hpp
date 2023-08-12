@@ -31,6 +31,7 @@ public:
     }
     void stop()
     {
+        std::cout << "stopping the client\n";
         if (!started_) return;
         started_ = false;
         sock_.close();
@@ -38,21 +39,34 @@ public:
     bool started() const { return started_; }
     void on_connect(const error_code &err)
     {
+        boost::this_thread::sleep(boost::posix_time::millisec(1000));
         send_message("login:" + username_);
+        boost::this_thread::sleep(boost::posix_time::millisec(1000));
+        read_the_message();
+        std::cout << "on_connect called\n";
     }
-    void send_message(std::string msg)
+    void send_message(std::string msg = "")
     {
         if (!started()) return;
         write_mutex.lock();
-        std::copy(msg.begin(), msg.end(), write_buffer_);
-        std::cout << "msg has been copied\n";
-        sock_.async_write_some(buffer(write_buffer_, msg.size()), 
-            boost::bind(&self_type::message_sended, shared_from_this(), _1, _2));
+        if (msg != "") {
+            char tmp[BUFFER_SIZE];
+            strncpy(tmp, msg.c_str(), BUFFER_SIZE - 1);
+            sock_.async_write_some(buffer(tmp), 
+                boost::bind(&self_type::message_sended, shared_from_this(), _1, _2));            
+        } else {
+            std::cout << "client, default send_message\n";
+            sock_.async_write_some(buffer(write_buffer_), 
+                boost::bind(&self_type::message_sended, shared_from_this(), _1, _2));
+        }
     }
     void message_sended(const error_code &err, size_t bytes)
     {
+        write_buffer_[0] = '\0';
         write_mutex.unlock();
-        read_the_message();
+        std::cout << "client, message have been sended\n";
+        // read_the_message();
+        send_message();
     }
     void read_the_message()
     {
@@ -62,27 +76,43 @@ public:
     void read_completed(const error_code &err, size_t bytes)
     {
         if (err) {
-            stop();
             std::cerr << "read_completed: error occured\n";
+            stop();
         }
         if (!started_) return;
         std::string msg(read_buffer_, bytes);
+        // std::string screen_buffer_string(screen_buffer);
+        // screen_buffer_string += username_ + msg + "\n";
+        std::cout << "received: " << msg << std::endl;
+        unsigned int index = strlen(screen_buffer);
+        strncpy(screen_buffer + index, username_.c_str(), 1000);
+        index += strlen(username_.c_str());
+        screen_buffer[index++] = ':';
+        strncpy(screen_buffer + index, read_buffer_, 1000);
+        index = strlen(screen_buffer);
+        screen_buffer[index] = '\n';
+        screen_buffer[index + 1] = '\0';
+        // printf("screen_buffer=%s", screen_buffer);
+        fflush(stdout);
         // std::cout << msg;
         // std::cout << "servers message: " << msg;
-        create_new_message();
+        // create_new_message();
+        // send_message();
+        read_the_message();
     }
     void create_new_message()
     {
-        std::string msg = "";
+        std::string msg(write_buffer_);
         // std::cin >> msg;
         // getline(std::cin, msg);
         // ip::tcp::endpoint lend = sock_.local_endpoint();
         // msg = sock_.local_endpoint().address().to_string() + ":" + msg + "\n";
         msg = username_ + ":" + msg + "\n";
-        send_message(msg);
+        // send_message(msg);
     }
     char* get_read_buffer() { return read_buffer_; }
     char* get_write_buffer() { return write_buffer_; }
+    char* get_screen_buffer() { return screen_buffer; }
     boost::interprocess::interprocess_mutex& get_mutex() { return write_mutex; }
 
 private:
@@ -93,6 +123,7 @@ private:
     bool started_;
     std::string username_;
     boost::interprocess::interprocess_mutex write_mutex;
+    char screen_buffer[BUFFER_SIZE];
 };
 
 // int main(int argc, char const *argv[])

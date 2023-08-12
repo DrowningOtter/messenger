@@ -15,6 +15,8 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
+bool is_locked = false;
+unsigned long long int count = 0;
 
 void Chat(bool *p_open, boost::shared_ptr<talk_to_svr> &session)
 {
@@ -65,16 +67,19 @@ void Chat(bool *p_open, boost::shared_ptr<talk_to_svr> &session)
 
     // static char outputtext[BUFFER_SIZE] = "";
     static ImGuiInputTextFlags flags_output = ImGuiInputTextFlags_ReadOnly;
-    ImGui::InputTextMultiline("##output_message", session->get_read_buffer(), BUFFER_SIZE, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 25), flags_output);
+    ImGui::InputTextMultiline("##output_message", session->get_screen_buffer(), BUFFER_SIZE, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 25), flags_output);
 
     // static char inputtext[BUFFER_SIZE] = "please, type your message\n";
     static ImGuiInputTextFlags flags_input = ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CtrlEnterForNewLine;
-    session->get_mutex().lock();
+    if (!is_locked) {session->get_mutex().lock(); is_locked = true;}
     ImGui::InputTextMultiline("##input_message", session->get_write_buffer(), BUFFER_SIZE, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 2), flags_input);
+    // if (count % 60 == 0) printf("%s\n", session->get_write_buffer());
     // session->get_mutex().unlock();
-    if (ImGui::Button("send_message")) {
+    if ((ImGui::Button("send_message") || ImGui::IsKeyPressed(ImGuiKey_Enter)) && is_locked) {
         session->get_mutex().unlock();
+        is_locked = false;
     }
+    count++;
 
     ImGui::End();
 }
@@ -137,7 +142,11 @@ int main(int argc, char const *argv[])
 {
     //NETWORK SECTION
     ip::tcp::endpoint ep(ip::address::from_string("127.0.0.1"), 8001);//server_address
-    const std::string name = "Artem";
+    if (argc < 2) {
+        std::cerr << "please enter your name\n";
+        return 1;
+    }
+    const std::string name(argv[1]);
     boost::shared_ptr<talk_to_svr> client = talk_to_svr::start(ep, name);
 
     auto thread = boost::thread(start_network);

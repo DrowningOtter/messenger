@@ -1,11 +1,14 @@
 #include <boost/asio.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/thread.hpp>
 #include <iostream>
 #include <vector>
 
+#define BUFFER_SIZE 1024 * 5
+
 using namespace boost::asio;
+using namespace boost::placeholders;
 io_service service;
 
 class talk_to_client;
@@ -23,6 +26,7 @@ public:
     {
         started_ = true;
         clients.push_back(shared_from_this());
+        std::cout << "client fucking started\n";
         reading();
     }
     static ptr new_()
@@ -32,6 +36,7 @@ public:
     }
     void stop()
     {
+        std::cout << "server, stop()\n";
         if (!started_) return;
         started_ = false;
         sock_.close();
@@ -42,6 +47,7 @@ public:
     ip::tcp::socket& sock() { return sock_; }
     std::string username() const { return username_; }
     void set_clients_changed() { clients_changed_ = true; }
+    void send_message_public(std::string msg) { send_message(msg); }
 
 private:
     void reading()
@@ -52,21 +58,28 @@ private:
     void read_completed(const error_code &err, size_t bytes)
     {
         if (err) stop();
-        if (!started_) return;
+        if (!started_) {
+            std::cerr << "server has been stopped in read_completed\n";
+            return;
+        }
+        // printf("read_buffer: %s\n", read_buffer_);
         std::string msg(read_buffer_, bytes);
+        std::cout << "server received: " << msg << std::endl;
         if (msg.find("login:") == 0) {
             std::string username = msg.substr(6);
-            if (std::find_if(clients.begin(), clients.end(), [username](const boost::shared_ptr<talk_to_client> p) {
-                return p->username() == username;
-            }) != clients.end())
-            {
-                //user found
-                send_message("you have already been registered!\n");
-            } else {
-                send_message("welcome to the server!\n");
-            }
+            username_ = username;
+            send_message("hello, " + username + "!");
         } else {
-            send_message(msg);
+            for (auto it = clients.begin(), e = clients.end(); it != e; ++it)
+            {
+                // std::cout << "server, entered rassylka\n";
+                std::cout << (*it)->username();
+                // printf("%s\n", (*it)->username());
+                // fflush(stdout);
+                (*it)->send_message_public(msg);
+            }
+            std::cout << std::endl;
+            // send_message(msg);
         }
     }
     void send_message(std::string msg)
@@ -90,10 +103,10 @@ private:
 
 private:
     ip::tcp::socket sock_;
-    enum { max_msg = 1024 };
+    bool started_;
+    enum { max_msg = BUFFER_SIZE };
     char read_buffer_[max_msg];
     char write_buffer_[max_msg];
-    bool started_;
     std::string username_;
     bool clients_changed_;
 };
